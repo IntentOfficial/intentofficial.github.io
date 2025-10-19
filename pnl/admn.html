@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PowerDNS Manager — int.yt</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --muted:#9aa6c1; --accent:#06b6d4;
+    --success:#10b981; --danger:#ef4444; --glass: rgba(255,255,255,0.03);
+  }
+  html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;background:
+    linear-gradient(180deg,#041022 0%, #071428 50%, #071229 100%);color:#e6eef8}
+  .container{max-width:1100px;margin:28px auto;padding:20px}
+  header{display:flex;align-items:center;gap:16px}
+  h1{margin:0;font-size:20px}
+  .sub{color:var(--muted);font-size:13px}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:14px;margin-top:14px;box-shadow: 0 6px 24px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+  .row{display:flex;gap:10px;align-items:center}
+  input,select,textarea,button{font:inherit;border-radius:8px;padding:8px 10px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:#e9f2ff}
+  input::placeholder,textarea::placeholder{color:#7f93aa}
+  button{cursor:pointer}
+  .btn{background:var(--accent);color:#052025;border:none;padding:8px 12px;border-radius:8px}
+  .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.04)}
+  .btn-danger{background:var(--danger);color:white;border:none}
+  .left{flex:1}
+  .zones-list button{display:block;width:100%;text-align:left;padding:8px;margin:6px 0;border-radius:8px;background:var(--glass);border:1px solid rgba(255,255,255,0.02)}
+  .records{margin-top:12px}
+  .rr-card{border-radius:8px;padding:10px;margin-bottom:10px;background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.02)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:rgba(255,255,255,0.03);margin-left:8px}
+  .small{font-size:13px;color:var(--muted)}
+  .muted{color:var(--muted)}
+  pre{background:rgba(255,255,255,0.02);padding:10px;border-radius:8px;overflow:auto;color:#d8e9ff}
+  .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:60}
+  .modal .card{width:640px;max-width:95%}
+  .grid{display:grid;grid-template-columns:1fr 240px;gap:12px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap}
+  .danger-small{font-size:12px;color:#ffb3b3}
+  .topbar{display:flex;gap:8px;align-items:center}
+  .search{width:320px}
+  .right-actions{margin-left:auto;display:flex;gap:8px}
+  .k{font-family:monospace;font-size:13px;padding:2px 6px;background:rgba(255,255,255,0.02);border-radius:6px}
+  footer{margin-top:18px;text-align:center;color:var(--muted);font-size:13px}
+  @media (max-width:760px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#042a2f,#023a56);display:flex;align-items:center;justify-content:center;font-weight:700">PDNS</div>
+      <div>
+        <h1>PowerDNS Manager — <span class="muted">int.yt</span></h1>
+        <div class="sub">Manage records for <span id="zoneDisplay">int.yt.</span> — password protected</div>
+      </div>
+    </header>
+
+    <!-- LOGIN -->
+    <div id="loginCard" class="card" style="margin-top:18px">
+      <div class="row">
+        <div class="left">
+          <div class="small">Enter admin password to unlock</div>
+          <input id="passwd" type="password" placeholder="admin password" style="width:260px;margin-top:8px"/>
+          <div class="small" style="margin-top:6px;color:var(--muted)">Password is <span class="k">intadmin</span> (client-side check)</div>
+        </div>
+        <div>
+          <button id="unlockBtn" class="btn">Unlock</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="app" style="display:none">
+      <div class="grid">
+        <div>
+          <div class="card">
+            <div class="topbar">
+              <div>
+                <div class="small">API Base</div>
+                <div class="muted k" id="apiBaseDisplay"></div>
+              </div>
+              <div style="margin-left:12px">
+                <div class="small">Zone</div>
+                <select id="zoneSelect" style="min-width:220px">
+                  <!-- will populate -->
+                </select>
+              </div>
+
+              <div class="right-actions">
+                <button id="refreshBtn" class="btn-ghost">Refresh</button>
+                <button id="openAddMenu" class="btn">Add Record</button>
+                <button id="logoutBtn" class="btn-ghost">Logout</button>
+              </div>
+            </div>
+
+            <div style="margin-top:12px">
+              <div class="small">Zone details</div>
+              <div style="display:flex;gap:12px;margin-top:8px;align-items:center">
+                <div class="k" id="zoneNameDisplay">int.yt.</div>
+                <div class="small">SOA serial: <span id="soaSerial">-</span></div>
+                <div class="small">RRsets: <span id="rrCount">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div><strong>Records</strong> <span class="small muted"> (click Delete to remove an rrset)</span></div>
+              <div class="small">Raw API: <span id="rawShort" class="k">/zones/{zone}</span></div>
+            </div>
+
+            <div id="recordsList" class="records" style="margin-top:10px"></div>
+
+            <div style="margin-top:10px">
+              <div class="small">API response</div>
+              <pre id="rawResponse">(not loaded)</pre>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div><strong>Quick operations</strong></div>
+            <div style="margin-top:8px" class="small muted">You can enter full FQDN (with trailing dot) or a relative name — we'll attach zone automatically.</div>
+
+            <div style="margin-top:12px">
+              <div class="small">Record name</div>
+              <input id="quick_name" placeholder="e.g. www or host.example.org." style="width:100%"/>
+              <div class="row" style="margin-top:8px">
+                <select id="quick_type" style="width:140px">
+                  <option>A</option><option>AAAA</option><option>CNAME</option><option>TXT</option><option>MX</option><option>NS</option><option>SRV</option><option>SPF</option><option>CAA</option><option>PTR</option>
+                </select>
+                <input id="quick_ttl" type="number" value="3600" style="width:120px"/>
+              </div>
+              <div style="margin-top:8px">
+                <div class="small">Content</div>
+                <input id="quick_content" placeholder='IP or "hello world" or "10 mail.int.yt."' style="width:100%"/>
+              </div>
+              <div style="margin-top:10px" class="controls">
+                <button id="quick_add" class="btn">Add / Replace</button>
+                <button id="quick_delete" class="btn-danger">Delete rrset</button>
+                <div id="quick_result" class="small"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:12px">
+            <div><strong>Zone / API Info</strong></div>
+            <div style="margin-top:8px" class="small">
+              <div>API Base: <span id="apiInfo" class="k"></span></div>
+              <div style="margin-top:6px">Note: this page sends header <span class="k">X-API-Key</span> with your key. Keep it private.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer>PowerDNS Manager • <span class="small">Designed for int.yt</span></footer>
+    </div>
+  </div>
+
+  <!-- ADD RECORD MODAL -->
+  <div id="addModal" style="display:none" class="modal">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><strong>Add / Replace Record</strong><div class="small muted">Fill fields for the record type and click Create</div></div>
+        <div><button id="closeAdd" class="btn-ghost">Close</button></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <div class="row">
+          <div style="flex:1">
+            <div class="small">Name (FQDN or relative)</div>
+            <input id="add_name" placeholder="www or host.example.org."/>
+            <div class="small muted">If relative, zone will be appended.</div>
+          </div>
+          <div style="width:160px">
+            <div class="small">Type</div>
+            <select id="add_type">
+              <option>A</option><option>AAAA</option><option>CNAME</option><option>TXT</option><option>MX</option><option>NS</option><option>SRV</option><option>SPF</option><option>CAA</option><option>PTR</option>
+            </select>
+          </div>
+          <div style="width:110px">
+            <div class="small">TTL</div>
+            <input id="add_ttl" type="number" value="3600"/>
+          </div>
+        </div>
+
+        <div style="margin-top:10px">
+          <div class="small">Content</div>
+          <input id="add_content" placeholder='For TXT/SPF use: hello world (we will add quotes). For MX use: "10 mail.int.yt."' />
+          <div class="small muted" style="margin-top:6px">Special helpers below change how content is created.</div>
+        </div>
+
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          <button id="addSubmit" class="btn">Create RRset</button>
+          <button id="addDelete" class="btn-danger">Delete RRset</button>
+          <div id="addResult" class="small"></div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="small">Examples</div>
+          <ul class="small muted">
+            <li>A: <span class="k">1.2.3.4</span></li>
+            <li>AAAA: <span class="k">2001:db8::1</span></li>
+            <li>CNAME: <span class="k">target.int.yt.</span></li>
+            <li>TXT: <span class="k">"hello world"</span> (we will add quotes automatically)</li>
+            <li>MX: <span class="k">10 mail.int.yt.</span></li>
+            <li>SRV: <span class="k">10 5 5060 sip.int.yt.</span></li>
+            <li>CAA: <span class="k">0 issue "letsencrypt.org"</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ================== CONFIG ====================
+   Replace these with your provided values (they are pre-filled)
+   =================================================*/
+const PDNS_API_BASE = "http://127.0.0.1:8081/api/v1/servers/localhost"; // user-provided
+const PDNS_API_KEY = "SuperSecretKey123"; // user-provided
+const DEFAULT_ZONE = "int.yt."; // user-provided (trailing dot)
+const APP_PASSWORD = "intadmin"; // requested password
+/* ============================================== */
+
+const apiBaseEl = document.getElementById('apiBaseDisplay');
+const apiInfoEl = document.getElementById('apiInfo');
+const zoneDisplay = document.getElementById('zoneDisplay');
+const zoneNameDisplay = document.getElementById('zoneNameDisplay');
+
+apiBaseEl.textContent = PDNS_API_BASE;
+apiInfoEl.textContent = PDNS_API_BASE + ' (X-API-Key sent)';
+
+let currentZone = DEFAULT_ZONE;
+
+// login
+document.getElementById('unlockBtn').addEventListener('click', ()=>{
+  const v = document.getElementById('passwd').value;
+  if(v === APP_PASSWORD) {
+    document.getElementById('loginCard').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    initApp();
+  } else {
+    alert('Wrong password');
+  }
+});
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  location.reload();
+});
+
+// helper fetch
+async function pdnsFetch(path, opts = {}) {
+  const url = PDNS_API_BASE.replace(/\/+$/,'') + path;
+  const headers = Object.assign({}, opts.headers || {}, {
+    'X-API-Key': PDNS_API_KEY,
+    'Accept': 'application/json'
+  });
+  if (opts.json) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.json);
+    delete opts.json;
+  }
+  const res = await fetch(url, Object.assign({credentials:'omit', headers}, opts));
+  const text = await res.text();
+  let data = text;
+  try { data = JSON.parse(text); } catch(e){}
+  return {ok:res.ok, status:res.status, data, raw:text, res};
+}
+
+// init
+async function initApp(){
+  zoneDisplay.textContent = DEFAULT_ZONE;
+  zoneNameDisplay.textContent = DEFAULT_ZONE;
+  await loadZones(); // populates zone select
+  await loadZone(DEFAULT_ZONE);
+  document.getElementById('refreshBtn').addEventListener('click', ()=> loadZone(currentZone));
+  document.getElementById('openAddMenu').addEventListener('click', ()=> openAddModal());
+  document.getElementById('closeAdd').addEventListener('click', ()=> closeAddModal());
+  document.getElementById('addSubmit').addEventListener('click', ()=> addOrReplaceFromModal());
+  document.getElementById('addDelete').addEventListener('click', ()=> deleteFromModal());
+  document.getElementById('quick_add').addEventListener('click', ()=> quickAdd());
+  document.getElementById('quick_delete').addEventListener('click', ()=> quickDelete());
+  document.getElementById('zoneSelect').addEventListener('change', (e)=> {
+    const z = e.target.value;
+    if(z) {
+      currentZone = z;
+      zoneNameDisplay.textContent = z;
+      loadZone(z);
+    }
+  });
+}
+
+// load zones list
+async function loadZones(){
+  try {
+    const r = await pdnsFetch('/zones');
+    if(!r.ok) {
+      document.querySelector('.zones-list')?.remove();
+      console.warn('could not load zones', r);
+      // still add default zone to select
+      const sel = document.getElementById('zoneSelect');
+      sel.innerHTML = `<option>${DEFAULT_ZONE}</option>`;
+      return;
+    }
+    const zones = Array.isArray(r.data)? r.data : [];
+    const sel = document.getElementById('zoneSelect');
+    sel.innerHTML = '';
+    // sort and add
+    zones.sort((a,b)=> a.name.localeCompare(b.name)).forEach(z=>{
+      const opt = document.createElement('option');
+      opt.value = z.name;
+      opt.textContent = z.name;
+      if(z.name === DEFAULT_ZONE) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    // ensure default present
+    if(!Array.from(sel.options).some(o=> o.value === DEFAULT_ZONE)) {
+      const opt = document.createElement('option');
+      opt.value = DEFAULT_ZONE;
+      opt.textContent = DEFAULT_ZONE;
+      sel.insertBefore(opt, sel.firstChild);
+    }
+  } catch(e) {
+    console.error('loadZones err', e);
+  }
+}
+
+// load a zone
+async function loadZone(zoneName){
+  const zoneEnc = encodeURIComponent(zoneName);
+  setRaw('(loading zone...)');
+  try {
+    const r = await pdnsFetch('/zones/' + zoneEnc);
+    if(!r.ok) {
+      setRaw(`Error ${r.status} — ${JSON.stringify(r.data)}`);
+      return;
+    }
+    const zoneData = r.data;
+    setRaw(JSON.stringify(zoneData, null, 2));
+    renderZone(zoneData);
+  } catch(e) {
+    setRaw('Exception: ' + e);
+  }
+}
+
+function setRaw(txt){
+  document.getElementById('rawResponse').textContent = txt;
+}
+
+function renderZone(zone){
+  const rr = zone.rrsets || [];
+  document.getElementById('rrCount').textContent = rr.length;
+  // SOA serial
+  const soa = rr.find(r=> r.type === 'SOA' && r.records && r.records[0]);
+  if(soa && soa.records && soa.records[0] && soa.records[0].content) {
+    // SOA content is like "ns1.int.yt. root.int.yt. 2025010101 7200 3600 1209600 3600"
+    const parts = soa.records[0].content.split(/\s+/);
+    document.getElementById('soaSerial').textContent = parts[2] || '-';
+  } else document.getElementById('soaSerial').textContent = '-';
+
+  const list = document.getElementById('recordsList');
+  list.innerHTML = '';
+  if(rr.length === 0) {
+    list.innerHTML = '<div class="small muted">No rrsets</div>';
+    return;
+  }
+  rr.forEach(r=>{
+    const el = document.createElement('div');
+    el.className = 'rr-card';
+    const header = document.createElement('div');
+    header.innerHTML = `<strong>${r.name}</strong><span class="tag">${r.type}</span><span style="margin-left:8px" class="small">TTL:${r.ttl}</span>`;
+    el.appendChild(header);
+    (r.records || []).forEach(rec=>{
+      const p = document.createElement('div');
+      p.className = 'small';
+      p.style.marginTop = '6px';
+      p.textContent = rec.content + (rec.disabled ? ' (disabled)' : '');
+      el.appendChild(p);
+    });
+    const actions = document.createElement('div');
+    actions.style.marginTop = '8px';
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-danger';
+    delBtn.textContent = 'Delete rrset';
+    delBtn.addEventListener('click', ()=> {
+      if(confirm(`Delete rrset ${r.name} ${r.type} ?`)) {
+        deleteRRset(r.name, r.type);
+      }
+    });
+    actions.appendChild(delBtn);
+    el.appendChild(actions);
+    list.appendChild(el);
+  });
+}
+
+// helpers to prepare names and content
+function makeFQDN(name){
+  name = (name||'').trim();
+  if(!name) return name;
+  if(name.endsWith('.')) return name;
+  // if contains dot (looks like FQDN without trailing dot) => add dot
+  if(name.includes('.')) return name + '.';
+  // relative name: attach zone
+  return name + (currentZone || DEFAULT_ZONE);
+}
+
+function tidyContentByType(type, contentRaw) {
+  let content = (contentRaw || '').trim();
+  if(type === 'TXT' || type === 'SPF') {
+    // remove surrounding quotes if user added them; we'll add single quoted string "..."
+    if(/^".*"$/.test(content)) return content;
+    return `"${content}"`;
+  }
+  return content;
+}
+
+// add/replace rrset
+async function createOrReplaceRRset(name, type, ttl, content) {
+  const rrname = makeFQDN(name);
+  const body = {
+    rrsets: [{
+      name: rrname,
+      type: type,
+      ttl: parseInt(ttl) || 3600,
+      changetype: "REPLACE",
+      records: [{ content: content, disabled: false }]
+    }]
+  };
+  setAddResult('Sending...');
+  const r = await pdnsFetch('/zones/' + encodeURIComponent(currentZone), {method:'PATCH', json: body});
+  if(r.status === 204 || r.ok) {
+    setAddResult('OK — refreshed');
+    await loadZone(currentZone);
+  } else {
+    setAddResult('Error: ' + r.status + ' ' + JSON.stringify(r.data));
+  }
+}
+
+// delete rrset
+async function deleteRRset(name, type) {
+  const rrname = makeFQDN(name);
+  const body = { rrsets: [{ name: rrname, type: type, changetype: "DELETE" }]};
+  setAddResult('Deleting...');
+  const r = await pdnsFetch('/zones/' + encodeURIComponent(currentZone), {method:'PATCH', json: body});
+  if(r.status === 204 || r.ok) {
+    setAddResult('Deleted — refreshed');
+    await loadZone(currentZone);
+  } else {
+    setAddResult('Error: ' + r.status + ' ' + JSON.stringify(r.data));
+  }
+}
+
+// quick add/delete handlers
+async function quickAdd(){
+  const name = document.getElementById('quick_name').value.trim();
+  const type = document.getElementById('quick_type').value;
+  const ttl = document.getElementById('quick_ttl').value;
+  let content = document.getElementById('quick_content').value.trim();
+  if(!name || !content) {
+    document.getElementById('quick_result').textContent = 'Enter name and content';
+    return;
+  }
+  content = tidyContentByType(type, content);
+  await createOrReplaceRRset(name, type, ttl, content);
+  document.getElementById('quick_result').textContent = 'Done';
+}
+
+async function quickDelete(){
+  const name = document.getElementById('quick_name').value.trim();
+  const type = document.getElementById('quick_type').value;
+  if(!name) { document.getElementById('quick_result').textContent = 'Enter name'; return; }
+  if(!confirm(`Delete rrset ${name} ${type}? This will issue changetype DELETE.`)) return;
+  await deleteRRset(name, type);
+  document.getElementById('quick_result').textContent = 'Deleted (check list)';
+}
+
+// modal handlers
+function openAddModal(){
+  document.getElementById('addModal').style.display = 'flex';
+  document.getElementById('add_name').value = '';
+  document.getElementById('add_content').value = '';
+  document.getElementById('addResult').textContent = '';
+}
+function closeAddModal(){
+  document.getElementById('addModal').style.display = 'none';
+}
+function setAddResult(t){ document.getElementById('addResult').textContent = t; }
+
+// add / delete from modal
+async function addOrReplaceFromModal(){
+  const name = document.getElementById('add_name').value.trim();
+  const type = document.getElementById('add_type').value;
+  const ttl = document.getElementById('add_ttl').value || 3600;
+  let content = document.getElementById('add_content').value.trim();
+  if(!name || !content) { setAddResult('Enter name and content'); return; }
+  content = tidyContentByType(type, content);
+  await createOrReplaceRRset(name, type, ttl, content);
+}
+async function deleteFromModal(){
+  const name = document.getElementById('add_name').value.trim();
+  const type = document.getElementById('add_type').value;
+  if(!name) { setAddResult('Enter name'); return; }
+  if(!confirm(`Delete rrset ${name} ${type}?`)) return;
+  await deleteRRset(name, type);
+}
+
+// set raw quickly
+function setRawShort(s){ document.getElementById('rawShort').textContent = s; }
+
+</script>
+</body>
+</html>
